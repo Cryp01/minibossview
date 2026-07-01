@@ -118,7 +118,24 @@ anytime with `miniboss doctor`.
 Only **git** is a hard prerequisite (Bun is installed for you). The launcher
 lands in Bun's bin dir (`~/.bun/bin` on macOS/Linux, `%USERPROFILE%\.bun\bin` on
 Windows); open a new terminal if it isn't on your PATH yet.
+
+Re-running the install is **idempotent** — it updates the CLI, skill, hooks and
+config in place (no duplicates); it clones to `~/.mini-boss-view`, separate from
+any development checkout.
 </details>
+
+**Uninstall** (removes the CLI, skill, and miniboss hooks — other hooks kept):
+```bash
+# macOS / Linux
+bun ~/.mini-boss-view/packages/installer/bin/uninstall.ts            # keep config
+bun ~/.mini-boss-view/packages/installer/bin/uninstall.ts --purge    # also delete credentials
+```
+```powershell
+# Windows
+bun "$HOME\.mini-boss-view\packages\installer\bin\uninstall.ts"          # keep config
+bun "$HOME\.mini-boss-view\packages\installer\bin\uninstall.ts" --purge  # also delete credentials
+```
+Then restart Claude Code.
 
 ---
 
