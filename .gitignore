@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.bun/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# PocketBase runtime data (never commit)
+pb/pocketbase
+pb/pb_data/
+pb/pb_public/
+
+# Local environment / secrets (keep the *.example templates)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# miniboss per-developer local state (never commit)
+.miniboss/state.json
+
+# Local, machine-specific Claude Code settings (keep launch.json)
+.claude/settings.local.json
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

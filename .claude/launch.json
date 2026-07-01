@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "board",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--filter", "@miniboss/board", "dev"],
+      "port": 5173
+    }
+  ]
+}

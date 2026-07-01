@@ -1,0 +1,17 @@
+{
+  "name": "@miniboss/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "miniboss": "./bin/miniboss.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@miniboss/shared": "workspace:*",
+    "zod": "^3.23.8"
+  }
+}

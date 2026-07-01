@@ -1,0 +1,13 @@
+{
+  "name": "@miniboss/installer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "miniboss-install": "./bin/install.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  }
+}

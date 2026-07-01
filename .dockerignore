@@ -1,0 +1,21 @@
+# Dependencies (reinstalled inside the image)
+node_modules
+**/node_modules
+
+# PocketBase runtime data + host (macOS) binary
+pb/pb_data
+pb/pocketbase
+pb/pb_public
+
+# Build output
+apps/board/dist
+**/dist
+
+# VCS / local
+.git
+.gitignore
+*.log
+.DS_Store
+.claude
+.vscode
+.idea

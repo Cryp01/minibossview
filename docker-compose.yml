@@ -1,0 +1,52 @@
+# Start the whole board (PocketBase API + built SPA) with one command:
+#
+#   docker compose up --build          # board on http://localhost:8090
+#   docker compose --profile seed up    # + load demo teams/projects/tickets
+#
+# Override the superuser via a .env file or the shell environment.
+services:
+  board:
+    build:
+      context: .
+      args:
+        PB_VERSION: "0.39.5"
+    image: mini-boss-view
+    container_name: miniboss-board
+    ports:
+      - "${BOARD_PORT:-8090}:8090"
+    environment:
+      # First-boot superuser (idempotent). CHANGE THESE in production.
+      PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL:-admin@miniboss.local}
+      PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD:-changeme-admin-123}
+    volumes:
+      - pb_data:/pb/pb_data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  # One-shot demo seeder. Runs only with:  docker compose --profile seed up
+  seed:
+    profiles: ["seed"]
+    image: oven/bun:1
+    container_name: miniboss-seed
+    depends_on:
+      board:
+        condition: service_healthy
+    working_dir: /app
+    environment:
+      PB_URL: http://board:8090
+      PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL:-admin@miniboss.local}
+      PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD:-changeme-admin-123}
+    volumes:
+      - .:/app
+      - seed_node_modules:/app/node_modules
+    command: ["sh", "-c", "bun install --frozen-lockfile && bun run scripts/seed.ts"]
+    restart: "no"
+
+volumes:
+  pb_data:
+  seed_node_modules:

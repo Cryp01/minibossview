@@ -1,0 +1,27 @@
+{
+  "name": "mini-boss-view",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "dev:pb": "cd pb && ./pocketbase serve --dir ./pb_data --migrationsDir ./pb_migrations",
+    "dev:board": "bun --filter @miniboss/board dev",
+    "build:board": "bun --filter @miniboss/board build",
+    "seed": "bun run scripts/seed.ts",
+    "pb:fetch": "bun run scripts/fetch-pocketbase.ts",
+    "test": "bun test",
+    "typecheck": "bun --filter '*' typecheck"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "pocketbase": "^0.27.0",
+    "typescript": "^5.6.3"
+  }
+}
