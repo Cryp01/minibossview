@@ -125,40 +125,29 @@ function ask(question: string, fallback = ""): string {
   return (answer ?? "").trim() || fallback;
 }
 
-/** Read a secret with the terminal echo off (falls back to visible input). */
-function readSecret(question: string): Promise<string> {
-  const stdin = process.stdin;
-  if (!stdin.isTTY || typeof stdin.setRawMode !== "function") {
-    return Promise.resolve(ask(question));
-  }
-  return new Promise((resolve) => {
-    process.stdout.write(`${question} `);
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding("utf8");
-    let value = "";
-    const done = (result: string) => {
-      stdin.setRawMode(false);
-      stdin.pause();
-      stdin.removeListener("data", onData);
+/**
+ * Read a secret with the terminal echo off. Masking is delegated to the shell
+ * (`stty -echo` reading the inherited TTY) — mixing Bun's prompt() with manual
+ * process.stdin raw-mode reading can HANG, so we avoid it entirely. Falls back
+ * to a visible prompt on Windows or when there is no TTY.
+ */
+async function readSecret(question: string): Promise<string> {
+  if (!isWindows && process.stdin.isTTY) {
+    try {
+      process.stdout.write(`${question} `);
+      const proc = Bun.spawn(
+        ["sh", "-c", 'stty -echo 2>/dev/null; IFS= read -r secret; stty echo 2>/dev/null; printf %s "$secret"'],
+        { stdin: "inherit", stdout: "pipe", stderr: "ignore" }
+      );
+      const value = await new Response(proc.stdout).text();
+      const code = await proc.exited;
       process.stdout.write("\n");
-      resolve(result);
-    };
-    const onData = (chunk: string) => {
-      for (const ch of chunk) {
-        if (ch === "\r" || ch === "\n") return done(value);
-        if (ch === "\u0003") {
-          process.stdout.write("\n");
-          process.exit(1);
-        } else if (ch === "\u007f" || ch === "\b") {
-          value = value.slice(0, -1);
-        } else {
-          value += ch;
-        }
-      }
-    };
-    stdin.on("data", onData);
-  });
+      if (code === 0) return value.replace(/[\r\n]+$/, "");
+    } catch {
+      // fall through to a visible prompt
+    }
+  }
+  return ask(`${question} (visible)`);
 }
 
 async function healthy(server: string): Promise<boolean> {
