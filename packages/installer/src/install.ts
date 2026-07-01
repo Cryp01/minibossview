@@ -1,10 +1,11 @@
 /**
- * One-command macOS installer. Idempotent end to end:
- *   - installs a `miniboss` launcher into ~/.bun/bin (+ PATH in ~/.zshrc)
- *   - stores server URL + agent credentials in ~/.config/miniboss (600)
+ * Guided, cross-platform client installer (macOS / Linux / Windows).
+ * Idempotent end to end:
+ *   - installs a `miniboss` launcher into the Bun bin dir (+ PATH on Unix)
+ *   - stores server URL + agent credentials in the per-user config (600)
  *   - MERGES hooks into ~/.claude/settings.json (backup, never clobbers)
  *   - installs the skill into ~/.claude/skills/miniboss
- *   - runs `miniboss doctor`
+ *   - verifies the connection with `miniboss doctor`
  */
 import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -12,11 +13,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mergeHooks } from "./hooks-merge.ts";
 
+const isWindows = process.platform === "win32";
+
 export interface InstallOptions {
   repoRoot: string;
   claudeDir: string;
   bunBinDir: string;
-  zshrcPath: string;
+  zshrcPath: string; // shell rc file to add PATH to (Unix); ignored on Windows
   configHome?: string; // XDG_CONFIG_HOME override (used by tests)
   server?: string;
   agentEmail?: string;
@@ -31,54 +34,78 @@ export interface InstallReport {
   doctorOk: boolean;
 }
 
+/** Detect the user's shell rc file for PATH updates (zsh default, else bash). */
+function shellRcPath(home: string): string {
+  const shell = process.env.SHELL ?? "";
+  if (shell.includes("bash")) {
+    return existsSync(join(home, ".bashrc")) ? join(home, ".bashrc") : join(home, ".bash_profile");
+  }
+  return join(home, ".zshrc");
+}
+
 export function defaultOptions(repoRoot: string): InstallOptions {
   const home = homedir();
-  const bunInstall = process.env.BUN_INSTALL && process.env.BUN_INSTALL.length > 0
-    ? process.env.BUN_INSTALL
-    : join(home, ".bun");
+  const bunInstall =
+    process.env.BUN_INSTALL && process.env.BUN_INSTALL.length > 0
+      ? process.env.BUN_INSTALL
+      : join(home, ".bun");
   return {
     repoRoot,
     claudeDir: join(home, ".claude"),
     bunBinDir: join(bunInstall, "bin"),
-    zshrcPath: join(home, ".zshrc"),
+    zshrcPath: shellRcPath(home),
     interactive: true,
   };
 }
 
+function cliEntry(opts: InstallOptions): string {
+  return join(opts.repoRoot, "packages", "cli", "bin", "miniboss.ts");
+}
+
 function launcherPath(opts: InstallOptions): string {
-  return join(opts.bunBinDir, "miniboss");
+  return join(opts.bunBinDir, isWindows ? "miniboss.cmd" : "miniboss");
 }
 
 async function installLauncher(opts: InstallOptions, steps: string[], warnings: string[]): Promise<void> {
-  const cliEntry = join(opts.repoRoot, "packages", "cli", "bin", "miniboss.ts");
-  if (!existsSync(cliEntry)) throw new Error(`CLI entry not found at ${cliEntry}`);
-
+  const entry = cliEntry(opts);
+  if (!existsSync(entry)) throw new Error(`CLI entry not found at ${entry}`);
   await mkdir(opts.bunBinDir, { recursive: true });
-  const launcher = `#!/bin/sh\n# miniboss launcher (generated)\nexec bun "${cliEntry}" "$@"\n`;
-  await writeFile(launcherPath(opts), launcher);
-  await chmod(launcherPath(opts), 0o755);
+
+  if (isWindows) {
+    // Windows shim: a .cmd that forwards to bun.
+    await writeFile(launcherPath(opts), `@echo off\r\nbun "${entry}" %*\r\n`);
+  } else {
+    await writeFile(launcherPath(opts), `#!/bin/sh\n# miniboss launcher (generated)\nexec bun "${entry}" "$@"\n`);
+    await chmod(launcherPath(opts), 0o755);
+  }
   steps.push(`installed launcher → ${launcherPath(opts)}`);
 
-  // Ensure the bin dir is on PATH (zsh is the user's shell).
-  const onPath = (process.env.PATH ?? "").split(":").includes(opts.bunBinDir);
-  if (!onPath) {
-    const line = `\n# miniboss / bun\nexport PATH="${opts.bunBinDir}:$PATH"\n`;
-    const current = existsSync(opts.zshrcPath) ? await readFile(opts.zshrcPath, "utf8") : "";
-    if (!current.includes(opts.bunBinDir)) {
-      await writeFile(opts.zshrcPath, current + line);
-      warnings.push(`added ${opts.bunBinDir} to PATH in ${opts.zshrcPath} — open a new terminal or 'source ~/.zshrc'`);
-    }
+  // Ensure the bin dir is on PATH.
+  const sep = isWindows ? ";" : ":";
+  const onPath = (process.env.PATH ?? "").split(sep).includes(opts.bunBinDir);
+  if (onPath) return;
+
+  if (isWindows) {
+    warnings.push(`ensure ${opts.bunBinDir} is on your PATH (Bun's installer usually adds it) then open a new terminal`);
+    return;
+  }
+  const line = `\n# miniboss / bun\nexport PATH="${opts.bunBinDir}:$PATH"\n`;
+  const current = existsSync(opts.zshrcPath) ? await readFile(opts.zshrcPath, "utf8") : "";
+  if (!current.includes(opts.bunBinDir)) {
+    await writeFile(opts.zshrcPath, current + line);
+    warnings.push(`added ${opts.bunBinDir} to PATH in ${opts.zshrcPath} — open a new terminal or run: source ${opts.zshrcPath}`);
   }
 }
 
-async function runLauncher(
+/** Run the CLI directly through bun (cross-platform; avoids launcher shell diffs). */
+async function runCli(
   opts: InstallOptions,
   args: string[],
   stdin = ""
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const env = { ...process.env };
   if (opts.configHome) env.XDG_CONFIG_HOME = opts.configHome;
-  const proc = Bun.spawn(["sh", launcherPath(opts), ...args], {
+  const proc = Bun.spawn(["bun", cliEntry(opts), ...args], {
     stdin: new TextEncoder().encode(stdin),
     stdout: "pipe",
     stderr: "pipe",
@@ -91,19 +118,107 @@ async function runLauncher(
   return { code: await proc.exited, stdout, stderr };
 }
 
-async function configure(opts: InstallOptions, steps: string[], warnings: string[]): Promise<void> {
-  const server = opts.server ?? (opts.interactive ? prompt("Board server URL (e.g. https://board.example.com):") : null);
-  const email = opts.agentEmail ?? (opts.interactive ? prompt("Agent email:") : null);
-  const password =
-    opts.agentPassword ?? (opts.interactive ? prompt("Agent password:") : null);
+// ---- interactive wizard ---------------------------------------------------
 
-  if (!server || !email || !password) {
-    warnings.push("server/agent credentials not provided — run `miniboss config set-server` and `set-agent` later");
+function ask(question: string, fallback = ""): string {
+  const answer = prompt(question);
+  return (answer ?? "").trim() || fallback;
+}
+
+/** Read a secret with the terminal echo off (falls back to visible input). */
+function readSecret(question: string): Promise<string> {
+  const stdin = process.stdin;
+  if (!stdin.isTTY || typeof stdin.setRawMode !== "function") {
+    return Promise.resolve(ask(question));
+  }
+  return new Promise((resolve) => {
+    process.stdout.write(`${question} `);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+    let value = "";
+    const done = (result: string) => {
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.removeListener("data", onData);
+      process.stdout.write("\n");
+      resolve(result);
+    };
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (ch === "\r" || ch === "\n") return done(value);
+        if (ch === "\u0003") {
+          process.stdout.write("\n");
+          process.exit(1);
+        } else if (ch === "\u007f" || ch === "\b") {
+          value = value.slice(0, -1);
+        } else {
+          value += ch;
+        }
+      }
+    };
+    stdin.on("data", onData);
+  });
+}
+
+async function healthy(server: string): Promise<boolean> {
+  try {
+    const res = await fetch(new URL("/api/health", server), { signal: AbortSignal.timeout(5000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function wizard(opts: InstallOptions): Promise<{ server: string; email: string; password: string } | null> {
+  process.stdout.write(
+    "\n  Mini Boss View — connect this machine to your team board\n" +
+      "  ─────────────────────────────────────────────────────────\n\n"
+  );
+
+  let server = opts.server ?? "";
+  while (!server) {
+    server = ask("  1/3  Board URL (e.g. https://board.yourcompany.com):");
+    if (!/^https?:\/\//.test(server)) {
+      process.stdout.write("       ↳ must start with http:// or https://\n");
+      server = "";
+      continue;
+    }
+    process.stdout.write(`       checking ${server} …\n`);
+    if (await healthy(server)) {
+      process.stdout.write("       ✓ reachable\n\n");
+    } else {
+      const cont = ask("       ✗ could not reach it. Continue anyway? [y/N]:").toLowerCase();
+      if (cont !== "y") server = "";
+    }
+  }
+
+  const email = opts.agentEmail ?? ask("  2/3  Agent email (from your board admin):");
+  const password = opts.agentPassword ?? (await readSecret("  3/3  Agent password (hidden):"));
+  if (!email || !password) {
+    process.stdout.write("\n  Missing email/password — skipping connection setup.\n");
+    return null;
+  }
+  return { server, email, password };
+}
+
+async function configure(opts: InstallOptions, steps: string[], warnings: string[]): Promise<void> {
+  let creds: { server: string; email: string; password: string } | null;
+  if (opts.interactive) {
+    creds = await wizard(opts);
+  } else if (opts.server && opts.agentEmail && opts.agentPassword) {
+    creds = { server: opts.server, email: opts.agentEmail, password: opts.agentPassword };
+  } else {
+    creds = null;
+  }
+
+  if (!creds) {
+    warnings.push("no server/credentials set — run `miniboss config set-server` and `set-agent` later");
     return;
   }
-  await runLauncher(opts, ["config", "set-server", server]);
-  await runLauncher(opts, ["config", "set-agent", email], password);
-  steps.push(`stored config for ${email} → ${server}`);
+  await runCli(opts, ["config", "set-server", creds.server]);
+  await runCli(opts, ["config", "set-agent", creds.email], creds.password);
+  steps.push(`stored config for ${creds.email} → ${creds.server}`);
 }
 
 async function mergeSettings(opts: InstallOptions, steps: string[]): Promise<void> {
@@ -125,7 +240,7 @@ async function mergeSettings(opts: InstallOptions, steps: string[]): Promise<voi
   const tmp = `${settingsPath}.${process.pid}.tmp`;
   await writeFile(tmp, JSON.stringify(settings, null, 2));
   await rename(tmp, settingsPath);
-  steps.push(added > 0 ? `merged ${added} hook(s) into settings.json (backup written)` : "hooks already present (no change)");
+  steps.push(added > 0 ? `merged ${added} hook(s) into settings.json (backup written)` : "hooks already present");
 }
 
 async function installSkill(opts: InstallOptions, steps: string[], warnings: string[]): Promise<void> {
@@ -149,7 +264,7 @@ export async function install(opts: InstallOptions): Promise<InstallReport> {
   await mergeSettings(opts, steps);
   await installSkill(opts, steps, warnings);
 
-  const doctor = await runLauncher(opts, ["doctor"]);
+  const doctor = await runCli(opts, ["doctor"]);
   const doctorOk = doctor.code === 0;
   if (!doctorOk) warnings.push("doctor reported issues:\n" + doctor.stdout.trim());
 

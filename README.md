@@ -14,7 +14,8 @@ see what every team is working on across every project.
   attributed to each commit's author).
 
 **Stack:** Vite · PocketBase v0.39.5 · TanStack (Router + Query) · `@dnd-kit` ·
-Bun (runtime + package manager). Developer machines: macOS.
+Bun (runtime + package manager). Developer machines: **macOS, Linux
+(Ubuntu/Debian), Windows**.
 
 ```
 apps/board/          Vite + TanStack SPA (the board UI)
@@ -78,29 +79,46 @@ Coolify needs for HTTPS + zero-config routing.
 
 ---
 
-## Part 2 — Install for your team (each developer, macOS)
+## Part 2 — Install for your team (each developer)
 
-Each developer runs this **once**. It installs the `miniboss` CLI, stores the
-board URL + agent credentials, and registers the Claude Code skill + hooks
-(merging into `~/.claude/settings.json` — existing hooks are preserved, with a
-backup).
+Each developer runs **one command**. A short guided prompt asks for the board
+URL and the agent credentials, verifies the connection, installs the `miniboss`
+CLI, and registers the Claude Code `/miniboss` skill + hooks (merged into
+`~/.claude/settings.json` — existing hooks preserved, with a backup). It also
+installs [Bun](https://bun.sh) automatically if it's missing.
 
+**macOS / Linux (Ubuntu/Debian):**
 ```bash
-git clone <this-repo-url> mini-boss-view
-cd mini-boss-view
-./install.sh https://board.yourcompany.com agent@yourcompany.com <agent-password>
+curl -fsSL https://raw.githubusercontent.com/Cryp01/minibossview/main/bootstrap.sh | sh
 ```
 
-(Run `./install.sh` with no arguments for interactive prompts.)
-
-Then **restart Claude Code once** so it discovers the `/miniboss` skill, and
-verify:
-
-```bash
-miniboss doctor
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/Cryp01/minibossview/main/bootstrap.ps1 | iex
 ```
 
-Prerequisite: [Bun](https://bun.sh) (`curl -fsSL https://bun.sh/install | bash`).
+The wizard walks through:
+```
+  Mini Boss View — connect this machine to your team board
+  1/3  Board URL:        https://board.yourcompany.com   ✓ reachable
+  2/3  Agent email:      agent@yourcompany.com
+  3/3  Agent password:   ••••••••  (hidden)
+```
+
+Then **restart Claude Code once** so it discovers the `/miniboss` skill. Verify
+anytime with `miniboss doctor`.
+
+<details><summary>Already cloned the repo, or want non-interactive?</summary>
+
+```bash
+# from a cloned checkout — interactive prompts, or pass args to skip them:
+./install.sh                                                   # guided
+./install.sh https://board.yourcompany.com agent@you.com <pw>  # non-interactive
+```
+Only **git** is a hard prerequisite (Bun is installed for you). The launcher
+lands in Bun's bin dir (`~/.bun/bin` on macOS/Linux, `%USERPROFILE%\.bun\bin` on
+Windows); open a new terminal if it isn't on your PATH yet.
+</details>
 
 ---
 
