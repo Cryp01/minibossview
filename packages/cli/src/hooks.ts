@@ -11,6 +11,7 @@ import { drainOutboxFor } from "./drain.ts";
 import { repoRootOf } from "./git.ts";
 import { describeError, logLine } from "./log.ts";
 import { loadState } from "./state.ts";
+import { checkForUpdate } from "./update.ts";
 
 const hookInputSchema = z
   .object({
@@ -49,25 +50,44 @@ async function safeDrain(cwd: string): Promise<void> {
   }
 }
 
-/** SessionStart: flush the outbox and surface the current task to Claude. */
+/** SessionStart: flush the outbox, surface the current task, and (throttled)
+ *  notify the developer when a miniboss update is available. */
 export async function hookSessionStart(raw: string): Promise<HookOutput> {
   const { cwd } = parseInput(raw);
   await safeDrain(cwd);
+
+  const notes: string[] = [];
   try {
     const repoRoot = await repoRootOf(cwd);
-    if (!repoRoot) return noOutput();
-    const state = await loadState(repoRoot);
-    if (!state.currentTitle) return noOutput();
-    const context = `miniboss: this repo has an active board task "${state.currentTitle}" (status ${state.status ?? "in_progress"}). Continue updating it with /miniboss as work progresses.`;
-    return {
-      stdout: JSON.stringify({
-        hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context },
-      }),
-    };
+    if (repoRoot) {
+      const state = await loadState(repoRoot);
+      if (state.currentTitle) {
+        notes.push(
+          `miniboss: this repo has an active board task "${state.currentTitle}" (status ${state.status ?? "in_progress"}). Continue updating it with /miniboss as work progresses.`
+        );
+      }
+    }
   } catch (error) {
     await logLine("warn", `session-start context failed: ${describeError(error)}`);
-    return noOutput();
   }
+
+  try {
+    const update = await checkForUpdate();
+    if (update?.available) {
+      notes.push(
+        `miniboss: an update is available (${update.current} → ${update.latest}). Tell the developer they can run \`miniboss update\`.`
+      );
+    }
+  } catch (error) {
+    await logLine("warn", `update check failed: ${describeError(error)}`);
+  }
+
+  if (notes.length === 0) return noOutput();
+  return {
+    stdout: JSON.stringify({
+      hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: notes.join(" ") },
+    }),
+  };
 }
 
 /** Stop: cheap outbox flush after a turn. Usually a no-op. */

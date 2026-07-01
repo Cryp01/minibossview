@@ -159,6 +159,21 @@ async function healthy(server: string): Promise<boolean> {
   }
 }
 
+/** Verify the agent credentials authenticate against the `agents` collection. */
+async function agentAuthOk(server: string, email: string, password: string): Promise<boolean> {
+  try {
+    const res = await fetch(new URL("/api/collections/agents/auth-with-password", server), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identity: email, password }),
+      signal: AbortSignal.timeout(8000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function wizard(opts: InstallOptions): Promise<{ server: string; email: string; password: string } | null> {
   process.stdout.write(
     "\n  Mini Boss View — connect this machine to your team board\n" +
@@ -182,13 +197,32 @@ async function wizard(opts: InstallOptions): Promise<{ server: string; email: st
     }
   }
 
-  const email = opts.agentEmail ?? ask("  2/3  Agent email (from your board admin):");
-  const password = opts.agentPassword ?? (await readSecret("  3/3  Agent password (hidden):"));
-  if (!email || !password) {
-    process.stdout.write("\n  Missing email/password — skipping connection setup.\n");
-    return null;
+  // Ask for agent creds and VERIFY they authenticate before we save anything.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const email = opts.agentEmail ?? ask("  2/3  Agent email (from your board admin):");
+    const password = opts.agentPassword ?? (await readSecret("  3/3  Agent password (hidden):"));
+    if (!email || !password) {
+      process.stdout.write("\n  Missing email/password — skipping connection setup.\n");
+      return null;
+    }
+    process.stdout.write("       verifying credentials …\n");
+    if (await agentAuthOk(server, email, password)) {
+      process.stdout.write("       ✓ authenticated\n");
+      return { server, email, password };
+    }
+    process.stdout.write(
+      "       ✗ authentication failed — use an AGENT account from the board's\n" +
+        "         'agents' collection (NOT the superuser).\n"
+    );
+    if (!opts.interactive) return null;
+    // Force a re-prompt on the next attempt.
+    opts = { ...opts, agentEmail: undefined, agentPassword: undefined };
+    if (attempt === 2) {
+      const cont = ask("       Save these credentials anyway? [y/N]:").toLowerCase();
+      if (cont === "y") return { server, email, password };
+    }
   }
-  return { server, email, password };
+  return null;
 }
 
 async function configure(opts: InstallOptions, steps: string[], warnings: string[]): Promise<void> {

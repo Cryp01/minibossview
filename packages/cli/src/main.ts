@@ -15,10 +15,14 @@ import { doctor } from "./doctor.ts";
 import { hookSessionEnd, hookSessionStart, hookStop } from "./hooks.ts";
 import { runImport, type GroupStrategy } from "./import.ts";
 import { runInit } from "./init.ts";
+import { runLogin, verifyConnection } from "./login.ts";
 import { reportDone, reportStart, reportStatus, reportUpdate } from "./report.ts";
+import { runUpdate } from "./update.ts";
 
 const USAGE = `miniboss — report development work to the team board
 
+  login                                               # connect/reconfigure (verifies auth)
+  update                                              # update the client to the latest
   init [--team <slug>] [--project <slug>] [--force]   # write .miniboss/config.json from the repo
   report start  --title <t> [--stdin | --summary <s>]
   report update [--stdin | --summary <s>]
@@ -83,6 +87,13 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   switch (command) {
+    case "login":
+      return await runLogin();
+    case "update": {
+      const result = await runUpdate();
+      printOutcomeLine(result.message);
+      return result.ok ? 0 : 1;
+    }
     case "init":
       return await runInitCommand(cwd, values);
     case "report":
@@ -242,6 +253,12 @@ async function runConfig(
       }
       await saveUserConfig({ server: arg });
       printOutcomeLine(`server set to ${arg}`);
+      try {
+        const res = await fetch(new URL("/api/health", arg), { signal: AbortSignal.timeout(6000) });
+        printOutcomeLine(res.ok ? "✓ server reachable" : `✗ server returned HTTP ${res.status}`);
+      } catch {
+        printOutcomeLine("✗ could not reach the server (check the URL / network)");
+      }
       return 0;
     }
     case "set-agent": {
@@ -257,6 +274,12 @@ async function runConfig(
       }
       await saveUserConfig({ agentEmail: email, agentPassword: password });
       printOutcomeLine(`agent credentials stored for ${email}`);
+      // Verify the agent actually authenticates against the configured server.
+      const cfg = await loadUserConfig();
+      if (cfg.server) {
+        const verify = await verifyConnection(cfg.server, email, password);
+        printOutcomeLine(verify.ok ? "✓ authenticated" : `✗ ${verify.message}`);
+      }
       return 0;
     }
     case "show": {

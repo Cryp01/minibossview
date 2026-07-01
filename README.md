@@ -69,9 +69,15 @@ first admin is created from env vars; data lives in a persistent volume.
    - **manager**/**viewer** records in `app_users` (role `manager` / `viewer`)
      so people can log into the board.
 
-   > Prefer scripting it? Run [`scripts/seed.ts`](scripts/seed.ts) against the
-   > deployed instance with `PB_URL`, `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`
-   > set — it creates the agent + manager + viewer + demo data.
+   > Prefer scripting it? Run [`scripts/provision-accounts.ts`](scripts/provision-accounts.ts)
+   > (agent + manager + viewer, **no demo data**) with your deploy superuser:
+   > ```bash
+   > PB_URL=https://board.yourcompany.com \
+   > PB_SUPERUSER_EMAIL=admin@... PB_SUPERUSER_PASSWORD='...' \
+   > bun scripts/provision-accounts.ts
+   > ```
+   > It prints the manager login and the agent credentials to hand to your team.
+   > (Use `scripts/seed.ts` instead if you also want demo boards/tickets.)
 
 Coolify notes: the compose already uses the external `coolify` network, no
 published `ports:`, a `driver: local` volume, and a healthcheck — the conventions
@@ -162,12 +168,21 @@ backdated and attributed to each commit's author.
 **Handy CLI commands:**
 
 ```bash
+miniboss login                # (re)connect to the board — verifies auth before saving
+miniboss update               # update the client to the latest, refresh the skill
+miniboss doctor               # server / credentials / git identity + update check
 miniboss init                 # write .miniboss/config.json from the repo (optional)
 miniboss init --team payments --project checkout-api   # or pin it explicitly
 miniboss import --group time --dry-run   # preview a deterministic import
 miniboss report status        # current task for this repo
-miniboss doctor               # server / credentials / git identity check
 ```
+
+**Reconfigure** (wrong URL/credentials, moved boards): run `miniboss login` — it
+prompts for the URL + agent email/password, **verifies they authenticate**, and
+only saves on success.
+
+**Updates.** When a newer client is available, Claude Code is notified at the
+start of a session (a throttled check) — just run `miniboss update`.
 
 ---
 
