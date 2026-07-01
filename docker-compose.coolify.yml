@@ -1,8 +1,9 @@
 # mini-boss-view — Coolify v4 deployment.
 #
-# In Coolify: New Resource → Docker Compose → paste/point at this file.
-# Set the env vars (below / .env.production.example) in the resource's
-# "Environment Variables" tab. Coolify provides HTTPS + Traefik automatically.
+# In Coolify: New Resource → Docker Compose → point at this file.
+# 1. Set the env vars below in the resource's "Environment Variables" tab.
+# 2. Assign a Domain to the `miniboss-board` service in the UI — Coolify routes
+#    Traefik to the exposed port 8090 and provisions HTTPS automatically.
 #
 # The single container runs PocketBase, which serves BOTH the REST API and the
 # built board SPA (from pb_public). Migrations auto-apply on boot.
@@ -13,15 +14,13 @@ services:
       dockerfile: Dockerfile
       args:
         PB_VERSION: "0.39.5"
+    # Map form (NOT a list) — Coolify rewrites this block and the list form breaks.
     environment:
-      # Coolify generates the public HTTPS domain and routes Traefik → port 8090.
-      # Leave the value empty; Coolify fills it. Assign the domain in the UI.
-      - SERVICE_FQDN_MINIBOSS_8090
-      # First-boot superuser for the PocketBase dashboard (/_/). Set as secrets.
-      - PB_SUPERUSER_EMAIL=${PB_SUPERUSER_EMAIL}
-      - PB_SUPERUSER_PASSWORD=${PB_SUPERUSER_PASSWORD}
+      # First-boot superuser for the PocketBase dashboard (/_/). Mark as secrets.
+      PB_SUPERUSER_EMAIL: "${PB_SUPERUSER_EMAIL}"
+      PB_SUPERUSER_PASSWORD: "${PB_SUPERUSER_PASSWORD}"
       # Optional: 32-char key to encrypt PocketBase settings at rest.
-      - PB_ENCRYPTION_KEY=${PB_ENCRYPTION_KEY}
+      PB_ENCRYPTION_KEY: "${PB_ENCRYPTION_KEY:-}"
     expose:
       - "8090"
     volumes:

@@ -55,8 +55,9 @@ first admin is created from env vars; data lives in a persistent volume.
    | `PB_SUPERUSER_PASSWORD` | first admin password (long & random) | **yes** |
    | `PB_ENCRYPTION_KEY` | optional 32-char key to encrypt settings (`openssl rand -hex 16`) | **yes** |
 
-3. **Assign a domain** to the service. Coolify fills `SERVICE_FQDN_MINIBOSS_8090`,
-   wires Traefik to port 8090, and provisions HTTPS (Let's Encrypt) automatically.
+3. **Assign a domain** to the `miniboss-board` service in the Coolify UI. Coolify
+   routes Traefik to the exposed port 8090 and provisions HTTPS (Let's Encrypt)
+   automatically — no `SERVICE_FQDN` env var needed.
 
 4. **Deploy.** When it's healthy (`/api/health`), open your domain — the board UI
    is served at `/`, the PocketBase admin dashboard at `/_/`.
